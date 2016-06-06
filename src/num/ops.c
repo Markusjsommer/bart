@@ -36,6 +36,7 @@
 struct operator_s {
 
 	unsigned int N;
+	unsigned int io_flags;
 	const struct iovec_s** domain;
 
 	operator_data_t* data;
@@ -50,8 +51,8 @@ struct operator_s {
 /**
  * Create an operator (with strides)
  */
-const struct operator_s* operator_generic_create2(unsigned int N, const unsigned int D[N],
-			const long* dims[N], const long* strs[N],
+const struct operator_s* operator_generic_create2(unsigned int N, unsigned int io_flags,
+			const unsigned int D[N], const long* dims[N], const long* strs[N],
 			operator_data_t* data, operator_fun_t apply, operator_del_t del)
 {
 	PTR_ALLOC(struct operator_s, op);
@@ -61,6 +62,7 @@ const struct operator_s* operator_generic_create2(unsigned int N, const unsigned
 		(*dom)[i] = iovec_create2(D[i], dims[i], strs[i], CFL_SIZE);
 
 	op->N = N;
+	op->io_flags = io_flags;
 	op->domain = *PTR_PASS(dom);
 	op->data = data;
 	op->apply = apply;
@@ -76,15 +78,16 @@ const struct operator_s* operator_generic_create2(unsigned int N, const unsigned
 /**
  * Create an operator (without strides)
  */
-const struct operator_s* operator_generic_create(unsigned int N, const unsigned int D[N],
-			const long* dims[N], operator_data_t* data, operator_fun_t apply, operator_del_t del)
+const struct operator_s* operator_generic_create(unsigned int N, unsigned int io_flags,
+			const unsigned int D[N], const long* dims[N],
+			operator_data_t* data, operator_fun_t apply, operator_del_t del)
 {
 	const long* strs[N];
 
 	for (unsigned int i = 0; i < N; i++)
 		strs[i] = MD_STRIDES(D[i], dims[i], CFL_SIZE);
 
-	return operator_generic_create2(N, D, dims, strs, data, apply, del);
+	return operator_generic_create2(N, io_flags, D, dims, strs, data, apply, del);
 }
 
 
@@ -96,8 +99,9 @@ const struct operator_s* operator_create2(unsigned int ON, const long out_dims[O
 			unsigned int IN, const long in_dims[IN], const long in_strs[IN],
 			operator_data_t* data, operator_fun_t apply, operator_del_t del)
 {
-	return operator_generic_create2(2, (unsigned int[2]){ ON, IN }, (const long* [2]){ out_dims, in_dims },
-			(const long* [2]){ out_strs, in_strs }, data, apply, del);
+	return operator_generic_create2(2, MD_BIT(0), (unsigned int[2]){ ON, IN },
+				(const long* [2]){ out_dims, in_dims }, (const long* [2]){ out_strs, in_strs },
+				data, apply, del);
 }
 
 /**
@@ -313,6 +317,7 @@ const struct operator_p_s* operator_p_create2(unsigned int ON, const long out_di
 	(*dom)[2] = iovec_create2(IN, in_dims, in_strs, CFL_SIZE);
 
 	o->op.N = 3;
+	o->op.io_flags = MD_BIT(1);
 	o->op.domain = *PTR_PASS(dom);
 	o->op.data = &PTR_PASS(op)->base;
 	o->op.apply = op_p_apply;
@@ -449,6 +454,7 @@ const struct operator_s* operator_chain(const struct operator_s* a, const struct
 	// check compatibility
 
 	assert((2 == a->N) && (2 == b->N));
+	assert((MD_BIT(0) == a->io_flags) && (MD_BIT(0) == b->io_flags));
 	assert(a->domain[0]->N == b->domain[1]->N);
 	assert(md_calc_size(a->domain[0]->N, a->domain[0]->dims) == md_calc_size(b->domain[1]->N, b->domain[1]->dims));
 
@@ -746,7 +752,7 @@ const struct operator_s* (operator_loop2)(unsigned int N, const unsigned int D,
 	data->dims = *dims2;
 	data->strs = *strs2;
 
-	return operator_generic_create2(N, D2, *dims2, *strs2, &data->base, op_loop_fun, op_loop_del);
+	return operator_generic_create2(N, op->io_flags, D2, *dims2, *strs2, &data->base, op_loop_fun, op_loop_del);
 }
 
 const struct operator_s* operator_loop(unsigned int D, const long dims[D], const struct operator_s* op)
@@ -783,7 +789,11 @@ static void gpuwrp_fun(const operator_data_t* _data, unsigned int N, void* args[
 	for (unsigned int i = 0; i < N; i++) {
 
 		const struct iovec_s* io = operator_arg_domain(op, i);
-		gpu_ptr[i] = md_gpu_move(io->N, io->dims, args[i], io->size);
+
+		if (MD_IS_SET(op->io_flags, i))
+			gpu_ptr[i] = md_alloc_gpu(io->N, io->dims, io->size);
+		else
+			gpu_ptr[i] = md_gpu_move(io->N, io->dims, args[i], io->size);
 	}
 
 	operator_generic_apply_unchecked(op, N, gpu_ptr);
@@ -791,7 +801,10 @@ static void gpuwrp_fun(const operator_data_t* _data, unsigned int N, void* args[
 	for (unsigned int i = 0; i < N; i++) {
 
 		const struct iovec_s* io = operator_arg_domain(op, i);
-		md_copy(io->N, io->dims, args[i], gpu_ptr[i], io->size);
+
+		if (MD_IS_SET(op->io_flags, i))
+			md_copy(io->N, io->dims, args[i], gpu_ptr[i], io->size);
+
 		md_free(gpu_ptr[i]);
 	}
 }
