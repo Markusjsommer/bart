@@ -839,7 +839,7 @@ const struct operator_s* operator_gpu_wrapper(const struct operator_s* op)
 	PTR_ALLOC(struct gpu_data_s, data);
 	data->op = op;
 
-	return operator_generic_create2(N, D, dims, strs, &data->base, gpuwrp_fun, gpuwrp_del);
+	return operator_generic_create2(N, op->io_flags, D, dims, strs, &PTR_PASS(data)->base, gpuwrp_fun, gpuwrp_del);
 }
 #endif
 
