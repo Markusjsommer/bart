@@ -23,7 +23,6 @@
 #include "num/ops.h"
 #include "num/iovec.h"
 
-#include "iter/lsqr.h"
 #include "iter/prox.h"
 #include "iter/thresh.h"
 #include "iter/misc.h"
@@ -477,13 +476,6 @@ int main_pics(int argc, char* argv[])
 	const struct operator_s* op = sense_recon_create(&conf, max_dims, forward_op, pat_dims, pattern,
 				italgo, iconf, nr_penalties, thresh_ops,
 				(ADMM == algo) ? trafos : NULL, ksp_dims, precond_op);
-
-	if (conf.gpu)
-#ifdef USE_CUDA
-		op = operator_gpu_wrapper(op);
-#else
-		assert(0);
-#endif
 
 	operator_apply(op, DIMS, img_dims, image, DIMS, ksp_dims, kspace);
 
