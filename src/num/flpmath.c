@@ -182,6 +182,7 @@ static void optimized_nop(unsigned int N, unsigned int io, unsigned int D, const
 		nstr2[i] = *nstr1[i] + skip;
 
 #ifdef USE_CUDA
+	debug_printf(DP_DEBUG3, "This is a %s call\n.", use_gpu(N, nptr1) ? "gpu" : "cpu");
 	struct data_s data = { md_calc_size(skip, tdims), use_gpu(N, nptr1) ? &gpu_ops : &cpu_ops, data_ptr };
 #else
 	struct data_s data = { md_calc_size(skip, tdims), &cpu_ops, data_ptr };
