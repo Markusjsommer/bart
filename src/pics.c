@@ -1,10 +1,10 @@
 /* Copyright 2013-2015. The Regents of the University of California.
- * Copyright 2015. Martin Uecker.
+ * Copyright 2015-2016. Martin Uecker.
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
  *
  * Authors:
- * 2012-2015 Martin Uecker <martin.uecker@med.uni-goettingen.de>
+ * 2012-2016 Martin Uecker <martin.uecker@med.uni-goettingen.de>
  * 2014-2016 Frank Ong <frankong@berkeley.edu>
  * 2014-2015 Jonathan Tamir <jtamir@eecs.berkeley.edu>
  *
@@ -62,14 +62,14 @@ static const char help_str[] = "Parallel-imaging compressed-sensing reconstructi
 
 
 
-static const struct linop_s* sense_nc_init(const long max_dims[DIMS], const long map_dims[DIMS], const complex float* maps, const long ksp_dims[DIMS], const long traj_dims[DIMS], const complex float* traj, struct nufft_conf_s conf, struct operator_s** precond_op)
+static const struct linop_s* sense_nc_init(const long max_dims[DIMS], const long map_dims[DIMS], const complex float* maps, const long ksp_dims[DIMS], const long traj_dims[DIMS], const complex float* traj, struct nufft_conf_s conf, const complex float* weights, struct operator_s** precond_op)
 {
 	long coilim_dims[DIMS];
 	long img_dims[DIMS];
 	md_select_dims(DIMS, ~MAPS_FLAG, coilim_dims, max_dims);
 	md_select_dims(DIMS, ~COIL_FLAG, img_dims, max_dims);
 
-	const struct linop_s* fft_op = nufft_create(DIMS, ksp_dims, coilim_dims, traj_dims, traj, NULL, conf);
+	const struct linop_s* fft_op = nufft_create(DIMS, ksp_dims, coilim_dims, traj_dims, traj, weights, conf);
 	const struct linop_s* maps_op = maps2_create(coilim_dims, map_dims, img_dims, maps);
 
 	//precond_op[0] = (struct operator_s*) nufft_precond_create( fft_op );
@@ -102,7 +102,7 @@ int main_pics(int argc, char* argv[])
 
 	// Read input options
 	struct nufft_conf_s nuconf = nufft_conf_defaults;
-	nuconf.toeplitz = false;
+	nuconf.toeplitz = true;
 
 	float restrict_fov = -1.;
 	const char* pat_file = NULL;
@@ -219,6 +219,8 @@ int main_pics(int argc, char* argv[])
 		debug_printf(DP_INFO, "Compare to truth\n");
 
 
+	assert(!((conf.rwiter > 1) && nuconf.toeplitz));
+
 
 	// initialize sampling pattern
 
@@ -242,7 +244,6 @@ int main_pics(int argc, char* argv[])
 
 		md_free(pattern);
 		pattern = NULL;
-		nuconf.toeplitz = true;
 
 	} else {
 
@@ -281,7 +282,7 @@ int main_pics(int argc, char* argv[])
 	if (NULL == traj_file)
 		forward_op = sense_init(max_dims, FFT_FLAGS|COIL_FLAG|MAPS_FLAG, maps);
 	else
-		forward_op = sense_nc_init(max_dims, map_dims, maps, ksp_dims, traj_dims, traj, nuconf, (struct operator_s**) &precond_op);
+		forward_op = sense_nc_init(max_dims, map_dims, maps, ksp_dims, traj_dims, traj, nuconf, pattern, (struct operator_s**) &precond_op);
 
 	// apply scaling
 
@@ -475,7 +476,8 @@ int main_pics(int argc, char* argv[])
 
 
 
-	const struct operator_s* op = sense_recon_create(&conf, max_dims, forward_op, pat_dims, pattern,
+	const struct operator_s* op = sense_recon_create(&conf, max_dims, forward_op,
+				pat_dims, (NULL == traj_file) ? pattern : NULL,
 				italgo, iconf, nr_penalties, thresh_ops,
 				(ADMM == algo) ? trafos : NULL, ksp_dims, precond_op);
 
